@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import gc
 from PIL import Image
 
 import torch
@@ -12,7 +13,10 @@ from transformers import CLIPTextModel, CLIPTokenizer,T5EncoderModel, T5Tokenize
 
 from toolkit.samplers.custom_flowmatch_sampler import CustomFlowMatchEulerDiscreteScheduler
 from .save_quantized_transformer import QUANTIZED_TRANSFORMER_NAME, TRANSFORMER_QUANTIZATION_MAP_NAME
-from .utils import flush
+
+def flush():
+    torch.cuda.empty_cache()
+    gc.collect()
 
 class FluxModel:
     def __init__(self, quantized_transformer_dir: Path | str, base_model_name: str = "black-forest-labs/FLUX.1-dev"):
