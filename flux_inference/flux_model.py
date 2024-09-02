@@ -95,3 +95,10 @@ class FluxModel:
         requantize(transformer, state_dict, quantization_map, device=self.device)
         flush()
         return transformer
+
+    def load_lora(self, lora_path: str | Path):
+        self.unload_lora()
+        self.pipe.load_lora_weights(lora_path)
+    
+    def unload_lora(self):
+        self.pipe.unload_lora_weights()
