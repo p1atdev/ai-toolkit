@@ -18,19 +18,30 @@ def flush():
     torch.cuda.empty_cache()
     gc.collect()
 
+def load_transformer(quantized_transformer_dir:Path|str) -> FluxTransformer2DModel:
+    quantized_transformer_dir = Path(quantized_transformer_dir)
+    state_dict = load_file(quantized_transformer_dir/'quantized_transformer.safetensors')
+
+    with open(quantized_transformer_dir/'transformer_quantization_map.json', "r") as f:
+        quantization_map = json.load(f)
+
+    with torch.device('meta'):
+        transformer = FluxTransformer2DModel()
+    
+    requantize(transformer, state_dict, quantization_map, "cpu")
+    return transformer
+
 class FluxModel:
-    def __init__(self, quantized_transformer_dir: Path | str, base_model_name: str = "black-forest-labs/FLUX.1-dev"):
-        quantized_transformer_dir = Path(quantized_transformer_dir)
+    def __init__(self, transformer: FluxTransformer2DModel, base_model_name: str = "black-forest-labs/FLUX.1-dev"):
         self.device = torch.device("cuda")
         self.dtype = torch.float16
 
-        transformer = self.load_transformer(quantized_transformer_dir)
         scheduler = self.load_scheduler()
         vae = AutoencoderKL.from_pretrained(base_model_name, subfolder="vae", torch_dtype=self.dtype)
         tokenizer, tokenizer_2, text_encoder, text_encoder_2 = self.load_text_processing_components(base_model_name)
 
-        self.load_pipe(transformer, scheduler, vae, tokenizer, tokenizer_2, text_encoder, text_encoder_2)
-    
+        self.load_pipe(scheduler, vae, tokenizer, tokenizer_2, text_encoder, text_encoder_2)
+        self.switch_transformer(transformer)
 
     def __call__(self, prompt: str, inference_args: dict, save_as: Path | None | str = None) -> Image:
         with torch.cuda.amp.autocast(): 
@@ -69,7 +80,7 @@ class FluxModel:
         return tokenizer, tokenizer_2, text_encoder, text_encoder_2
 
 
-    def load_pipe(self, transformer: FluxTransformer2DModel, scheduler: CustomFlowMatchEulerDiscreteScheduler, vae: AutoencoderKL, tokenizer: CLIPTokenizer, tokenizer_2: T5TokenizerFast, text_encoder: CLIPTextModel, text_encoder_2: T5EncoderModel):
+    def load_pipe(self, scheduler: CustomFlowMatchEulerDiscreteScheduler, vae: AutoencoderKL, tokenizer: CLIPTokenizer, tokenizer_2: T5TokenizerFast, text_encoder: CLIPTextModel, text_encoder_2: T5EncoderModel):
         pipe = FluxPipeline(
             scheduler=scheduler,
             text_encoder=text_encoder,
@@ -77,28 +88,12 @@ class FluxModel:
             tokenizer=tokenizer,
             tokenizer_2=tokenizer_2,
             vae=vae,
-            transformer=transformer,
+            transformer=None,
         )
         self.pipe = pipe.to(self.device)
         flush()
-
-
-    def load_transformer(self, quantized_transformer_dir:Path) -> FluxTransformer2DModel:
-        state_dict = load_file(quantized_transformer_dir/QUANTIZED_TRANSFORMER_NAME)
-
-        with open(quantized_transformer_dir/TRANSFORMER_QUANTIZATION_MAP_NAME, "r") as f:
-            quantization_map = json.load(f)
-
-        with torch.device('meta'):
-            transformer = FluxTransformer2DModel()
         
-        requantize(transformer, state_dict, quantization_map, device=self.device)
-        flush()
-        return transformer
-
-    def load_lora(self, lora_path: str | Path):
-        self.unload_lora()
-        self.pipe.load_lora_weights(lora_path)
-    
-    def unload_lora(self):
-        self.pipe.unload_lora_weights()
+   def switch_transformer(self, transformer: FluxTransformer2DModel):
+        if self.pipe.transformer:
+            self.pipe.transformer.to("cpu")
+        self.pipe.transformer = transformer.to(self.device)
