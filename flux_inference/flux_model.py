@@ -20,9 +20,9 @@ def flush():
 
 def load_transformer(quantized_transformer_dir:Path|str) -> FluxTransformer2DModel:
     quantized_transformer_dir = Path(quantized_transformer_dir)
-    state_dict = load_file(quantized_transformer_dir/'quantized_transformer.safetensors')
+    state_dict = load_file(quantized_transformer_dir/QUANTIZED_TRANSFORMER_NAME)
 
-    with open(quantized_transformer_dir/'transformer_quantization_map.json', "r") as f:
+    with open(quantized_transformer_dir/TRANSFORMER_QUANTIZATION_MAP_NAME, "r") as f:
         quantization_map = json.load(f)
 
     with torch.device('meta'):
