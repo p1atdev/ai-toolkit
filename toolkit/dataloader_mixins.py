@@ -356,38 +356,41 @@ class CaptionProcessingDTOMixin:
             if rand < self.dataset_config.caption_dropout_rate:
                 # drop the caption
                 return ''
+            
+        if self.dataset_config.shuffle_by_category:
+            separator = self.dataset_config.shuffle_by_category_separator
+            categories = raw_caption.split(separator)
+        else:
+            categories = [raw_caption]
 
         # get tokens
-        token_list = raw_caption.split(',')
+        token_list = [
+            category.split(',') for category in categories
+        ]
         # trim whitespace
-        token_list = [x.strip() for x in token_list]
+        token_list = [[x.strip() for x in token] for token in token_list]
         # remove empty strings
-        token_list = [x for x in token_list if x]
+        token_list = [[x for x in token if x] for token in token_list]
 
         # handle token dropout
         if self.dataset_config.token_dropout_rate > 0 and not short_caption:
             new_token_list = []
             keep_tokens: int = self.dataset_config.keep_tokens
-            for idx, token in enumerate(token_list):
-                if idx < keep_tokens:
-                    new_token_list.append(token)
-                elif self.dataset_config.token_dropout_rate >= 1.0:
-                    # drop the token
-                    pass
-                else:
-                    # get a random float form 0 to 1
-                    rand = random.random()
-                    if rand > self.dataset_config.token_dropout_rate:
-                        # keep the token
+            for idx_list, tokens in enumerate(token_list):
+                new_token_list.append([])
+                for idx_token, token in enumerate(tokens):
+                    if idx_list == 0 and idx_token < keep_tokens:
                         new_token_list.append(token)
+                    elif self.dataset_config.token_dropout_rate >= 1.0:
+                        # drop the token
+                        pass
+                    else:
+                        # get a random float form 0 to 1
+                        rand = random.random()
+                        if rand > self.dataset_config.token_dropout_rate:
+                            # keep the token
+                            new_token_list[idx_list].append(token)
             token_list = new_token_list
-
-        if self.dataset_config.shuffle_tokens:
-            random.shuffle(token_list)
-
-        # join back together
-        caption = ', '.join(token_list)
-        # caption = inject_trigger_into_prompt(caption, trigger, to_replace_list, add_if_not_present)
 
         if self.dataset_config.random_triggers:
             num_triggers = self.dataset_config.random_triggers_max
@@ -396,7 +399,8 @@ class CaptionProcessingDTOMixin:
 
             if num_triggers > 0:
                 triggers = random.sample(self.dataset_config.random_triggers, num_triggers)
-                caption = caption + ', ' + ', '.join(triggers)
+                token_list.append(triggers)
+
                 # add random triggers
                 # for i in range(num_triggers):
                 #     # fastest method
@@ -404,14 +408,16 @@ class CaptionProcessingDTOMixin:
                 #     caption = caption + ', ' + trigger
 
         if self.dataset_config.shuffle_tokens:
-            # shuffle again
-            token_list = caption.split(',')
+            # shuffle
             # trim whitespace
-            token_list = [x.strip() for x in token_list]
+            token_list = [[x.strip() for x in token] for token in token_list]
             # remove empty strings
-            token_list = [x for x in token_list if x]
-            random.shuffle(token_list)
-            caption = ', '.join(token_list)
+            token_list = [[x for x in token if x] for token in token_list]
+            # shuffle each token list
+            for token in token_list:
+                random.shuffle(token_list)
+            # flatten and join
+            caption = ', '.join([x for sublist in token_list for x in sublist])
 
         return caption
 
